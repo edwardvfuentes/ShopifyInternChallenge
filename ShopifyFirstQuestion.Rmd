@@ -1,0 +1,134 @@
+---
+title: "Fall 2022 Data Science Intern Challenge"
+subtitle: "Question 1"
+author: "Edward"
+date: '2022-05-10'
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Import packages
+library(tidyverse)
+library(lubridate)
+
+# Import data
+q1_data_base <- read_csv(file.path("data", "sheet_1.csv"))
+
+```
+
+# Question 1
+
+Let's take a first look:
+
+```{r}
+head(q1_data_base)
+```
+In terms of data types, we can see that 5 variables were read as doubles, while
+the remaining two are read as character. Some modifications are pertinent:
+For example, all id variables should be characters because they don't have any
+statistical meaning:
+
+```{r double_to_character}
+# Transform id variables into characters. Note we are saving these changes into
+# a new data frame
+q1_data <- q1_data_base %>% mutate_at(vars(contains("id")), as.character)
+
+```
+
+Moreover, _created at_ has been imported as a character but it would be more
+useful as a datetime variable:
+
+```{r character_to_dtt}
+# Transform created_at into dttm
+q1_data <- q1_data %>% mutate(created_at = ymd_hms(created_at))
+
+```
+
+Now let's look at a brief summary of the dataset:
+
+```{r}
+
+# The database's dimension (rows and columns)
+dim(q1_data)
+
+# Summary of the numerical and date sample
+summary(q1_data %>% select(order_amount, total_items, created_at))
+
+# Histograms and boxplots of order_amount and total_items
+
+q1_data %>%
+  select(order_amount, total_items) %>% 
+  pivot_longer(cols = c(order_amount, total_items),
+                         names_to = "variable") %>% 
+  ggplot(aes(x = variable, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~ variable, scales = "free")
+
+
+# Distribution of the categorical variables (id and payment method)
+
+## Number of distinct categories
+q1_data %>% select_if(is.character) %>% map_df(n_distinct)
+
+## Counts of orders for every category but order_id
+
+## For shop_id
+q1_data %>%
+  count(shop_id) %>%
+  ggplot(aes(x = n)) +
+  geom_histogram(binwdith = 1) +
+  labs(title = "Counts for shop_id")
+
+#3 For user_id
+q1_data %>%
+  count(user_id) %>%
+  ggplot(aes(x = n)) +
+  geom_histogram(binwidth = 1) +
+  labs(title = "Counts for user_id")
+
+# For payment_method
+q1_data %>%
+  count(payment_method) %>%
+  arrange(desc(n))
+
+```
+
+
+In the proposed problem, it is said that the AOV (Average Order value) is `r mean(q1_data$order_amount)`, which is unusually high for just a pair of sneakers. What can be the cause of this? Looking at the numerical summary, we can see that there are huge outliers in both the order_amount (which is the price of an order) and the total_items (which is, presumably, the total number of bought sneaker pairs), which easily distorts the calculated histograms and boxplots. For example, values from order_amount range from 90 to 704000, while total items range between 1 and 2000. These findings suggest a heavily right-skewed distributions for both variables, which influences the average in a significant way (see how the average is higher than the median in both variables). Because of this, the median is more appropiate for the AOV calculation, because it is robust to outliers, so if instead we focus on the median, we have a value of 284€ for the order amount and 2 for total_items.
+
+The previous result cand lead us into another question: Is the median representative enough of the price of a pair of sneakers? Note that some orders in this dataset include more than just one item. For instance, the outliers orders that amounted to 704000 dollars come from orders with a total of 2000 items, as we now show:
+
+```{r}
+q1_data %>%
+  filter(order_amount == 704000) %>%
+  arrange(created_at)
+
+```
+If we want an average price for a pair of sneakers (recall that all shops in this dataset sell the same model of sneakers), we would need to divide order_amount by total_items. We will do this now into a new variable called item_amount:
+
+```{r}
+
+# Create new feature that calculates mean amount per item
+q1_data <- q1_data %>% mutate(item_amount = order_amount / total_items)
+
+# Distribution of the newly created variable
+summary(q1_data$item_amount)
+hist(q1_data$item_amount)
+
+q1_data %>% filter(item_amount == max(item_amount))
+
+
+```
+
+In the distribution of the new variable, we can see that shop 78 sells pairs of sneakers that cost 25725 (!!) dollars, which is suspicious. If we treated this as an outlier and removed it from the sample, the median of `r median(q1_data %>% filter(item_amount != max(item_amount)) %>% pull(order_amount))` dollars across orders would still be the same. Additionally, it seems that the median value of the pairs of sneakers, according to item_amount, is `r median(q1_data$item_amount)` dollars, which looks relatively affordable.
+
+
+
